@@ -1,0 +1,22 @@
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/*.tfplan
+terraform/nul
+terraform/terraform.tfvars
+
+# Node
+node_modules/
+dist/
+
+# Env / secrets
+.env
+.env.local
+
+# Per-deployment ALB hostname written by scripts/setup.sh
+.lab-domain
+
+# OS
+.DS_Store
+Thumbs.db
