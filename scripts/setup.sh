@@ -108,6 +108,7 @@ RDS_MASTER_USER=$(terraform output -raw rds_master_username)
 RDS_MASTER_PASSWORD=$(terraform output -raw rds_master_password)
 ALB_CONTROLLER_ROLE_ARN=$(terraform output -raw alb_controller_role_arn)
 LAB_DOMAIN=$(terraform output -raw lab_domain)
+CERT_ARN=$(terraform output -raw acm_certificate_arn)
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 echo "$LAB_DOMAIN" > "$REPO_ROOT/.lab-domain"
@@ -189,7 +190,7 @@ helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-contro
   --wait --timeout=5m
 
 for manifest in "$REPO_ROOT"/ingress/*.yaml; do
-  LAB_DOMAIN="$LAB_DOMAIN" envsubst '${LAB_DOMAIN}' < "$manifest" | kubectl apply -f -
+  LAB_DOMAIN="$LAB_DOMAIN" CERT_ARN="$CERT_ARN" envsubst '${LAB_DOMAIN} ${CERT_ARN}' < "$manifest" | kubectl apply -f -
 done
 
 echo ""
@@ -220,10 +221,10 @@ echo "================================================================"
 echo "All 5 apps share this one ALB (routed by hostname via an IngressGroup)."
 echo "DNS is live in Route 53 -- these URLs work immediately, no manual step:"
 echo ""
-echo "  http://ecommerce.${LAB_DOMAIN}"
-echo "  http://banking.${LAB_DOMAIN}"
-echo "  http://food-delivery.${LAB_DOMAIN}"
-echo "  http://student-portal.${LAB_DOMAIN}"
-echo "  http://support-tickets.${LAB_DOMAIN}"
+echo "  https://ecommerce.${LAB_DOMAIN}"
+echo "  https://banking.${LAB_DOMAIN}"
+echo "  https://food-delivery.${LAB_DOMAIN}"
+echo "  https://student-portal.${LAB_DOMAIN}"
+echo "  https://support-tickets.${LAB_DOMAIN}"
 echo ""
 echo "Next: install the Datadog Agent with your own API key -- see docs/student-guide.md."

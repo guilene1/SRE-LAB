@@ -63,7 +63,7 @@ flowchart TB
 
     DDCloud["Datadog\n(student's own account)"]
 
-    Student -->|"http://ecommerce.$(cat .lab-domain) etc."| ALB
+    Student -->|"https://ecommerce.$(cat .lab-domain) etc."| ALB
     ALB -->|"target-type: ip, direct to pod"| EcomFE & BankFE & FoodFE & SPFE & STFE
     ALBController -.->|"manages listeners/rules/targets"| ALB
     EcomFE --> EcomBE
@@ -124,6 +124,17 @@ flowchart TB
   a NodePort on every node -- one less hop, and Service objects for every
   app stay plain `ClusterIP` since the ALB talks to pods directly and
   the Ingress is the only externally-reachable object.
+- **HTTPS**: `terraform/acm.tf` requests a wildcard ACM certificate for
+  `*.<your-domain>`, DNS-validated against the same Route 53 hosted zone
+  `dns.tf` already looks up -- no extra prerequisite beyond what's already
+  required for plain HTTP. Each Ingress carries the resulting certificate
+  ARN (`alb.ingress.kubernetes.io/certificate-arn`), a second listener on
+  443 (`alb.ingress.kubernetes.io/listen-ports`), and
+  `alb.ingress.kubernetes.io/ssl-redirect: '443'`, which makes the
+  controller add an HTTP-to-HTTPS redirect rule on the 80 listener. Since
+  that redirect applies to every path, `scripts/chaos/*.sh` call
+  `https://` directly rather than relying on the redirect (a redirected
+  `POST` can silently become a `GET`, which would break the chaos hooks).
 
 ## Database: Amazon RDS for PostgreSQL
 
@@ -201,4 +212,3 @@ monitor definitions.
 | One shared ALB (`IngressGroup`) across all 5 apps | One ALB per app/environment, plus AWS WAF attached |
 | Chaos endpoints reachable over the public Ingress | Chaos hooks gated behind a separate internal-only port/network policy |
 | Terraform state stored locally | Remote state (S3 + DynamoDB lock table) |
-| No TLS on the Ingress | ACM certificate + HTTPS redirect |

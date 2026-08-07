@@ -57,16 +57,20 @@ the chaos scripts under `scripts/chaos/` read automatically:
 ```bash
 cat .lab-domain
 # or build a specific app's URL directly:
-echo "http://ecommerce.$(cat .lab-domain)"
+echo "https://ecommerce.$(cat .lab-domain)"
 ```
 
-Now visit each app in your browser (substituting your own domain):
+Now visit each app in your browser (substituting your own domain). Each one
+is served over HTTPS with a real, browser-trusted certificate (a wildcard
+ACM cert, DNS-validated automatically during `setup.sh` -- no extra step or
+warning to click through), and plain HTTP requests redirect to HTTPS
+automatically:
 
-- http://ecommerce.\<your-domain\>
-- http://banking.\<your-domain\>
-- http://food-delivery.\<your-domain\>
-- http://student-portal.\<your-domain\>
-- http://support-tickets.\<your-domain\>
+- https://ecommerce.\<your-domain\>
+- https://banking.\<your-domain\>
+- https://food-delivery.\<your-domain\>
+- https://student-portal.\<your-domain\>
+- https://support-tickets.\<your-domain\>
 
 Demo login credentials (banking and student-portal) use password
 `demo123` -- see each app's `sql/init.sql` for the exact usernames.

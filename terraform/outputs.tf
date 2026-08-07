@@ -47,6 +47,11 @@ output "lab_domain" {
   value       = var.dns_zone_name
 }
 
+output "acm_certificate_arn" {
+  description = "Validated ACM certificate ARN for the shared ALB's HTTPS listener, consumed by scripts/setup.sh"
+  value       = aws_acm_certificate_validation.wildcard.certificate_arn
+}
+
 output "alb_controller_role_arn" {
   description = "IAM role ARN for the aws-load-balancer-controller service account (IRSA), consumed by scripts/setup.sh"
   value       = aws_iam_role.alb_controller.arn

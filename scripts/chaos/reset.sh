@@ -12,6 +12,6 @@ LAB_DOMAIN="${LAB_DOMAIN:-$(cat "$REPO_ROOT/.lab-domain" 2>/dev/null || true)}"
 
 APP="${1:?usage: reset.sh <app>}"
 
-curl -sf -X POST "http://${APP}.${LAB_DOMAIN}/api/chaos/reset"
+curl -sf -X POST "https://${APP}.${LAB_DOMAIN}/api/chaos/reset"
 echo ""
 echo "Chaos state cleared for ${APP}-backend."

@@ -13,7 +13,7 @@ LAB_DOMAIN="${LAB_DOMAIN:-$(cat "$REPO_ROOT/.lab-domain" 2>/dev/null || true)}"
 APP="${1:?usage: cpu-spike.sh <app> [seconds]}"
 SECONDS_ARG="${2:-10}"
 
-curl -sf -X POST "http://${APP}.${LAB_DOMAIN}/api/chaos/cpu-spike" \
+curl -sf -X POST "https://${APP}.${LAB_DOMAIN}/api/chaos/cpu-spike" \
   -H "Content-Type: application/json" \
   -d "{\"seconds\": ${SECONDS_ARG}}"
 echo ""

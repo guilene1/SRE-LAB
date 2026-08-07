@@ -94,7 +94,7 @@ cp terraform/terraform.tfvars.example terraform/terraform.tfvars
 
 # 2. Visit the apps (the domain is also saved to .lab-domain at the repo
 #    root, in case you lose the setup.sh output)
-open http://ecommerce.$(cat .lab-domain)
+open https://ecommerce.$(cat .lab-domain)
 
 # 3. Install the Datadog Agent with your own API key
 # (the datadog namespace already exists -- setup.sh created it in step 4/8)
@@ -263,7 +263,7 @@ actually fixes them:
 | `helm install`/`upgrade datadog` fails with `duplicate entries for key [name="DD_APM_NON_LOCAL_TRAFFIC"]` | Current Datadog Helm chart versions auto-inject this env var once `datadog.apm` is enabled; an older `datadog/helm-values.yaml` also set it explicitly | Already fixed in current `datadog/helm-values.yaml` (the manual `env:` override was removed) -- pull latest if you still see this |
 | Datadog Helm install prints `ERROR: You did not set a datadog.appKey` | Expected if you only created an API key, not an Application key | Harmless for the core lab -- the app key is only used by the optional `clusterAgent.metricsProvider` (Datadog-backed HPA custom metrics) stretch goal. Everything else (metrics, APM, logs, dashboards, monitors) works without it |
 | App URLs return `NXDOMAIN` right after `setup.sh` finishes | DNS propagation lag, or the registrar delegation issue above slipped past preflight (e.g. it was fixed seconds before you ran the script and hadn't propagated yet) | Wait a few minutes and retry; if it persists, re-check NS delegation manually: `aws route53 list-resource-record-sets --hosted-zone-id <zone-id> --query "ResourceRecordSets[?Type=='NS']"` vs `nslookup -type=NS <your-domain> 8.8.8.8` -- the two lists must match exactly |
-| Need to hit an app before DNS is fixed | -- | Bypass DNS entirely by talking to the ALB directly with a `Host` header: `curl -H "Host: ecommerce.<your-domain>" http://<alb-hostname>/` (get `<alb-hostname>` from `kubectl -n ecommerce get ingress ecommerce`) |
+| Need to hit an app before DNS is fixed | -- | Bypass DNS entirely by talking to the ALB directly with a `Host` header: `curl -k -H "Host: ecommerce.<your-domain>" https://<alb-hostname>/` (get `<alb-hostname>` from `kubectl -n ecommerce get ingress ecommerce`; `-k` skips cert verification since the ALB's TLS cert is issued for `*.<your-domain>`, not its own `*.elb.amazonaws.com` hostname) |
 | `scripts/chaos/reset.sh` (or a manual `/api/chaos/reset` call) doesn't seem to clear a `drop-db-connection` fault | The reset request routes through the app's Service/Ingress, but a pod with the DB-connection chaos active has already failed enough readiness probes to be pulled *out* of that Service -- so the reset silently lands on a different, unaffected pod instead | Reset the specific pod directly, bypassing the Service: `kubectl exec -n <app> <pod> -- node -e "require('http').request({host:'localhost',port:4000,path:'/api/chaos/reset',method:'POST'}).end()"` |
 | `bad-deploy.sh` leaves the new ReplicaSet at `0/1` with a `FailedCreate`/`ReplicaFailure` condition instead of pods stuck in `ImagePullBackOff` | The target namespace's `ResourceQuota` has no CPU/memory headroom left for the rollout's surge pod (`food-delivery` in particular runs close to its quota with 2 backend + 2 frontend + 1 redis pod already scheduled) -- Kubernetes never gets far enough to attempt the image pull | Same end result either way (old pods keep serving, `kubectl rollout undo` fixes it) -- if you want to see the documented `ImagePullBackOff` behavior specifically, pick a namespace/app with more quota headroom, or raise that namespace's `ResourceQuota` in `namespaces/<app>.yaml` |
 
@@ -291,7 +291,7 @@ checklist is printed at the end of the teardown script.
 
 This is a training lab, not a production reference architecture -- several
 things (a shared RDS instance, plaintext demo-login passwords, a shared
-ALB, publicly-reachable chaos endpoints, local Terraform state, no TLS) are
+ALB, publicly-reachable chaos endpoints, local Terraform state) are
 simplified on purpose to keep it cheap and easy for anyone to stand up
 independently. See
 [docs/architecture.md](docs/architecture.md#whats-deliberately-simplified-for-a-training-lab)

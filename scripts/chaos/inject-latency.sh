@@ -13,9 +13,9 @@ LAB_DOMAIN="${LAB_DOMAIN:-$(cat "$REPO_ROOT/.lab-domain" 2>/dev/null || true)}"
 APP="${1:?usage: inject-latency.sh <app> [ms]}"
 MS="${2:-3000}"
 
-curl -sf -X POST "http://${APP}.${LAB_DOMAIN}/api/chaos/latency" \
+curl -sf -X POST "https://${APP}.${LAB_DOMAIN}/api/chaos/latency" \
   -H "Content-Type: application/json" \
   -d "{\"ms\": ${MS}}"
 echo ""
 echo "Injected ${MS}ms of latency into ${APP}-backend. Reset with:"
-echo "  curl -X POST http://${APP}.${LAB_DOMAIN}/api/chaos/reset"
+echo "  curl -X POST https://${APP}.${LAB_DOMAIN}/api/chaos/reset"

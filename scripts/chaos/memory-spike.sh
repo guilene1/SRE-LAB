@@ -13,7 +13,7 @@ LAB_DOMAIN="${LAB_DOMAIN:-$(cat "$REPO_ROOT/.lab-domain" 2>/dev/null || true)}"
 APP="${1:?usage: memory-spike.sh <app> [mb]}"
 MB="${2:-300}"
 
-curl -sf -X POST "http://${APP}.${LAB_DOMAIN}/api/chaos/memory-spike" \
+curl -sf -X POST "https://${APP}.${LAB_DOMAIN}/api/chaos/memory-spike" \
   -H "Content-Type: application/json" \
   -d "{\"mb\": ${MB}}"
 echo ""
