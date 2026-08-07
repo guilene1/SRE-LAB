@@ -73,6 +73,15 @@ Demo login credentials (banking and student-portal) use password
 
 ## 5. Install the Datadog Agent
 
+First, find your org's Datadog **site** -- go to **Organization Settings >
+API Keys** (or just look at the URL once you're logged in: it's the
+`<site>` part of `app.<site>`, e.g. `us5.datadoghq.com`, `datadoghq.eu`,
+`ap1.datadoghq.com`). Trials aren't all on the same site, so open
+`datadog/helm-values.yaml` and replace the placeholder `site:` value with
+yours before installing -- if you skip this, the agent pods still come up
+`Running` but silently fail to authenticate, and nothing ever shows up in
+your dashboard.
+
 ```bash
 kubectl create namespace datadog
 
@@ -108,10 +117,12 @@ Dashboards (repeat for each file in `datadog/dashboards/`):
 
 Monitors (repeat for each file in `datadog/monitors/`) -- there's no
 JSON-import button for monitors in the UI, so create them via the API
-with your API and Application key:
+with your API and Application key. The API host is `api.<your-site>` (the
+same site you set in `datadog/helm-values.yaml` in step 5, e.g.
+`api.us5.datadoghq.com`) -- **not** always `api.datadoghq.com`:
 
 ```bash
-curl -X POST "https://api.datadoghq.com/api/v1/monitor" \
+curl -X POST "https://api.<your-site>/api/v1/monitor" \
   -H "Content-Type: application/json" \
   -H "DD-API-KEY: <your-api-key>" \
   -H "DD-APPLICATION-KEY: <your-app-key>" \

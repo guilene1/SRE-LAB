@@ -5,6 +5,8 @@ terraform/*.tfstate.backup
 terraform/*.tfplan
 terraform/nul
 terraform/terraform.tfvars
+*.tfstate
+*.tfstate.backup
 
 # Node
 node_modules/
