@@ -130,14 +130,17 @@ a container metric for the same pod all correlate in Datadog automatically.
 ## Observability: Datadog
 
 Each student runs their own free-trial Datadog account -- nothing in this
-repo contains a real API key. The Datadog Agent and Cluster Agent are
-installed once via Helm (`datadog/helm-values.yaml`) with APM and log
-collection enabled. Every backend requires `dd-trace` as the very first
+repo contains a real API key. Passing `DATADOG_API_KEY` (and optionally
+`DATADOG_APP_KEY`, `DATADOG_SITE`) to `scripts/setup.sh` installs the
+Datadog Agent and Cluster Agent via Helm (`datadog/helm-values.yaml`) with
+APM and log collection enabled, and -- if an app key was provided --
+imports every dashboard/monitor via the Datadog API (see step 9/9 in
+`scripts/setup.sh`). Every backend requires `dd-trace` as the very first
 line executed (`src/tracer.js`, loaded via `-r`), so a single HTTP request
 is traceable frontend -> backend -> Postgres in APM. See
-`docs/student-guide.md` for the exact account setup and install steps, and
-`datadog/dashboards/` + `datadog/monitors/` for importable dashboard and
-monitor definitions.
+`docs/student-guide.md` for the exact account setup and env vars, and
+`datadog/dashboards/` + `datadog/monitors/` for the dashboard and monitor
+definitions themselves.
 
 ## What's deliberately simplified for a training lab
 
