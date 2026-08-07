@@ -51,9 +51,13 @@ apps/<app>/
   account), `kubectl`, `docker`, `helm`, and `envsubst` (from `gettext`;
   not preinstalled on macOS -- `brew install gettext && brew link --force
   gettext`) installed locally.
-- An AWS account you're comfortable spending ~$150-250/month on if left
-  running (see [Cost](#cost) below) -- there is no free tier here, this
-  provisions real EKS/RDS/NAT infrastructure.
+- Your **own** AWS account you're comfortable spending ~$150-250/month on if
+  left running (see [Cost](#cost) below) -- there is no free tier here, this
+  provisions real EKS/RDS/NAT infrastructure. Resource names (`sre-lab`
+  cluster, RDS instance, ECR repos) are fixed, not parameterized per user --
+  this is built for **one deployment per AWS account**, so if multiple
+  people are doing this lab, each one needs their own separate account, not
+  a shared one.
 - An existing Route 53 **public hosted zone in that same AWS account** (any
   domain you control, already set up in Route 53 -- this lab looks it up by
   name, it won't create one for you). It creates five DNS records directly
