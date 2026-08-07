@@ -15,7 +15,18 @@ function isDbDropActive() {
 
 // Applied globally: injects latency and random 500s ahead of real handlers.
 function chaosMiddleware(req, res, next) {
-  if (req.path.startsWith("/api/chaos")) return next();
+  // /healthz and /readyz are the actual liveness/readiness probes (see
+  // apps/<app>/k8s/deployment-backend.yaml) -- latency/error injection must
+  // not touch them, or kubelet restarts the pod as an unintended side
+  // effect. isDbDropActive() in index.js's /readyz handler is a separate,
+  // intentional mechanism and is unaffected by this exemption.
+  if (
+    req.path.startsWith("/api/chaos") ||
+    req.path === "/healthz" ||
+    req.path === "/readyz"
+  ) {
+    return next();
+  }
 
   const finish = () => {
     if (state.errorRate > 0 && Math.random() < state.errorRate) {

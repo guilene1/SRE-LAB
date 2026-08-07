@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS restaurants (
   id SERIAL PRIMARY KEY,
-  name TEXT NOT NULL,
+  name TEXT UNIQUE NOT NULL,
   cuisine TEXT NOT NULL,
   rating NUMERIC(2,1) NOT NULL,
   image_url TEXT NOT NULL
@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS menu_items (
   name TEXT NOT NULL,
   description TEXT NOT NULL,
   price_cents INTEGER NOT NULL,
-  image_url TEXT NOT NULL
+  image_url TEXT NOT NULL,
+  UNIQUE (restaurant_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS orders (

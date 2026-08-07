@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS products (
   id SERIAL PRIMARY KEY,
-  name TEXT NOT NULL,
+  name TEXT UNIQUE NOT NULL,
   description TEXT NOT NULL,
   price_cents INTEGER NOT NULL,
   category TEXT NOT NULL,
