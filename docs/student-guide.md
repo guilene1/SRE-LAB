@@ -19,26 +19,51 @@ account, and nothing in this repo contains a real API key.
 1. Go to [datadoghq.com](https://www.datadoghq.com/) and start a free
    trial.
 2. Once logged in, go to **Organization Settings > API Keys** and copy
-   your API key.
-3. (Optional, needed only for the Datadog Terraform provider or advanced
-   API calls, not required for this lab) find your **Application Key**
-   under **Organization Settings > Application Keys**.
+   your **API key** -- this is required.
+3. Go to **Organization Settings > Application Keys** and copy your
+   **Application key** too -- optional, but without it `setup.sh` installs
+   the Agent (metrics/APM/logs all work) and skips only the dashboard and
+   monitor import in step 3 below.
+4. Note your org's **site** -- look at the URL once you're logged in, it's
+   the `<site>` part of `app.<site>` (e.g. `us5.datadoghq.com`,
+   `datadoghq.eu`, `ap1.datadoghq.com`). Trials aren't all on the same
+   site; getting this wrong is the classic failure mode here -- the agent
+   pods still come up `Running` but silently fail to authenticate, and
+   nothing ever shows up in your dashboard, so double check it.
 
 ## 3. Deploy the lab
 
 From the repo root:
 
 ```bash
-# 1. Provision AWS infrastructure, build/push images, deploy all 5 apps
-./scripts/setup.sh
+DATADOG_API_KEY=<your-datadog-api-key> \
+DATADOG_APP_KEY=<your-datadog-app-key> \
+DATADOG_SITE=<your-site, default datadoghq.com> \
+  ./scripts/setup.sh
 ```
 
 This runs `terraform apply`, configures `kubectl`, builds and pushes all
 10 container images to ECR, provisions a database + least-privilege user
-per app on the shared RDS instance, deploys every app, and installs the
-AWS Load Balancer Controller. It prints an ALB hostname at the end -- keep
-that handy for the next step. Expect this to take 15-20 minutes, mostly
-waiting on the EKS cluster and ALB to come up.
+per app on the shared RDS instance, deploys every app, installs the AWS
+Load Balancer Controller, and -- since `DATADOG_API_KEY` is set -- installs
+the Datadog Agent and imports every dashboard/monitor too. Expect this to
+take 15-20 minutes, mostly waiting on the EKS cluster and ALB to come up.
+
+You can omit all three `DATADOG_*` variables to skip Datadog entirely for
+now and install it later by re-running this exact command with them set --
+everything else in the script is safe to re-run. Once it finishes, confirm
+in the Datadog UI: go to **APM > Traces** and browse one of the apps (e.g.
+add a product to your ecommerce cart) -- you should see a trace appear
+within a few seconds, spanning frontend -> backend -> Postgres. If you
+provided an app key, also check **Dashboards > Dashboard List** for the 6
+imported dashboards and **Monitors > Manage Monitors** for the 4 imported
+monitors.
+
+Re-running with a new `DATADOG_API_KEY` (e.g. switching accounts) is safe
+-- the script restarts the Agent pods so they pick up the new key. The
+dashboard/monitor import is **not** idempotent, though -- running it twice
+creates duplicates, so only pass `DATADOG_APP_KEY` on the run(s) where you
+actually want to (re-)import them.
 
 ## 4. Point your browser at the apps
 
@@ -75,70 +100,12 @@ automatically:
 Demo login credentials (banking and student-portal) use password
 `demo123` -- see each app's `sql/init.sql` for the exact usernames.
 
-## 5. Install the Datadog Agent
-
-First, find your org's Datadog **site** -- go to **Organization Settings >
-API Keys** (or just look at the URL once you're logged in: it's the
-`<site>` part of `app.<site>`, e.g. `us5.datadoghq.com`, `datadoghq.eu`,
-`ap1.datadoghq.com`). Trials aren't all on the same site, so open
-`datadog/helm-values.yaml` and replace the placeholder `site:` value with
-yours before installing -- if you skip this, the agent pods still come up
-`Running` but silently fail to authenticate, and nothing ever shows up in
-your dashboard.
-
-```bash
-kubectl create namespace datadog
-
-kubectl create secret generic datadog-secret \
-  --namespace datadog \
-  --from-literal api-key=<your-datadog-api-key>
-
-helm repo add datadog https://helm.datadoghq.com
-helm repo update
-
-helm install datadog datadog/datadog \
-  --namespace datadog \
-  -f datadog/helm-values.yaml
-```
-
-Give it a minute, then confirm the agent is reporting:
-
-```bash
-kubectl -n datadog get pods
-```
-
-In the Datadog UI, go to **APM > Traces** and browse one of the apps
-(e.g. add a product to your ecommerce cart) -- you should see a trace
-appear within a few seconds, spanning frontend -> backend -> Postgres.
-
-## 6. Import the dashboards and monitors
-
-Dashboards (repeat for each file in `datadog/dashboards/`):
-
-1. In Datadog, go to **Dashboards > New Dashboard**.
-2. Click the gear icon (top right) > **Import Dashboard JSON**.
-3. Paste the contents of the file and save.
-
-Monitors (repeat for each file in `datadog/monitors/`) -- there's no
-JSON-import button for monitors in the UI, so create them via the API
-with your API and Application key. The API host is `api.<your-site>` (the
-same site you set in `datadog/helm-values.yaml` in step 5, e.g.
-`api.us5.datadoghq.com`) -- **not** always `api.datadoghq.com`:
-
-```bash
-curl -X POST "https://api.<your-site>/api/v1/monitor" \
-  -H "Content-Type: application/json" \
-  -H "DD-API-KEY: <your-api-key>" \
-  -H "DD-APPLICATION-KEY: <your-app-key>" \
-  -d @datadog/monitors/high-error-rate.json
-```
-
-## 7. Task list
+## 5. Task list
 
 Work through these roughly in order. Take notes as you go -- you'll need
 them for the postmortems.
 
-1. **Deploy.** Complete steps 3-6 above. Confirm all five apps load and
+1. **Deploy.** Complete steps 2-4 above. Confirm all five apps load and
    you can complete one real user action in each (add to cart and check
    out in ecommerce, log in and check a balance in banking, place an
    order in food-delivery, view grades in student-portal, file a ticket
@@ -166,7 +133,7 @@ them for the postmortems.
    yourself directly with the scripts in `scripts/chaos/` and writing your
    own scenario for a classmate.
 
-## 8. Tear down
+## 6. Tear down
 
 When you're done, avoid leaving the lab running (it costs real money):
 

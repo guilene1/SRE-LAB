@@ -2,11 +2,14 @@
 # End-to-end setup: terraform apply -> configure kubectl -> build/push images ->
 # create per-app databases on the shared RDS instance -> create k8s secrets ->
 # deploy every app -> install the AWS Load Balancer Controller and Ingresses ->
-# print next steps.
+# optionally install Datadog -> print next steps.
 #
 # Requires: terraform, aws cli (configured), kubectl, docker, helm.
 # RDS has no public access, so per-app databases are created via a short-lived
 # pod running inside the cluster (the only thing allowed to reach RDS:5432).
+#
+# Optional: set DATADOG_API_KEY (and DATADOG_APP_KEY, DATADOG_SITE) to also
+# install the Datadog Agent and import dashboards/monitors -- see step 9/9.
 
 set -euo pipefail
 
@@ -17,7 +20,7 @@ APPS=(ecommerce banking food-delivery student-portal support-tickets)
 echo "==> Preflight checks"
 
 missing_tools=()
-for tool in terraform aws kubectl docker helm envsubst nslookup; do
+for tool in terraform aws kubectl docker helm envsubst nslookup curl; do
   command -v "$tool" >/dev/null 2>&1 || missing_tools+=("$tool")
 done
 if [ "${#missing_tools[@]}" -gt 0 ]; then
@@ -94,7 +97,7 @@ if [ -z "$PUBLIC_NS" ] || [ "$ROUTE53_NS" != "$PUBLIC_NS" ]; then
   esac
 fi
 
-echo "==> 1/8 terraform apply"
+echo "==> 1/9 terraform apply"
 cd "$TF_DIR"
 terraform init -input=false
 terraform apply -auto-approve
@@ -113,10 +116,10 @@ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 echo "$LAB_DOMAIN" > "$REPO_ROOT/.lab-domain"
 
-echo "==> 2/8 configure kubectl"
+echo "==> 2/9 configure kubectl"
 aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$REGION"
 
-echo "==> 3/8 build and push images to ECR"
+echo "==> 3/9 build and push images to ECR"
 aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
 IMAGE_TAG="$(date +%Y%m%d%H%M%S)"
@@ -129,10 +132,10 @@ for app in "${APPS[@]}"; do
   done
 done
 
-echo "==> 4/8 create namespaces"
+echo "==> 4/9 create namespaces"
 kubectl apply -f "$REPO_ROOT/namespaces/"
 
-echo "==> 5/8 create per-app databases on shared RDS instance"
+echo "==> 5/9 create per-app databases on shared RDS instance"
 for app in "${APPS[@]}"; do
   db_name="${app//-/_}_db"
   db_user="${app//-/_}_app"
@@ -165,10 +168,10 @@ for app in "${APPS[@]}"; do
     --dry-run=client -o yaml | kubectl apply -f -
 done
 
-echo "==> 6/8 deploy food-delivery redis"
+echo "==> 6/9 deploy food-delivery redis"
 kubectl apply -f "$REPO_ROOT/apps/food-delivery/redis/deployment.yaml"
 
-echo "==> 7/8 deploy all apps"
+echo "==> 7/9 deploy all apps"
 for app in "${APPS[@]}"; do
   k8s_dir="$REPO_ROOT/apps/${app}/k8s"
   for manifest in "$k8s_dir"/*.yaml; do
@@ -176,7 +179,7 @@ for app in "${APPS[@]}"; do
   done
 done
 
-echo "==> 8/8 install the AWS Load Balancer Controller, apply Ingress, and create DNS records"
+echo "==> 8/9 install the AWS Load Balancer Controller, apply Ingress, and create DNS records"
 helm repo add eks https://aws.github.io/eks-charts >/dev/null 2>&1 || true
 helm repo update >/dev/null
 helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
@@ -214,6 +217,79 @@ cd "$TF_DIR"
 terraform apply -auto-approve -var="create_dns_records=true"
 cd "$REPO_ROOT"
 
+echo "==> 9/9 install the Datadog Agent (optional)"
+if [ -z "${DATADOG_API_KEY:-}" ]; then
+  echo "    DATADOG_API_KEY not set -- skipping. Everything above is safe to"
+  echo "    re-run, so install it later with:"
+  echo "      DATADOG_API_KEY=<key> [DATADOG_APP_KEY=<key>] [DATADOG_SITE=<site>] ./scripts/setup.sh"
+  DATADOG_INSTALLED=false
+else
+  DATADOG_SITE="${DATADOG_SITE:-datadoghq.com}"
+
+  # Existence check rather than `kubectl apply`: step 4/9 already created this
+  # namespace (with a label) via namespaces/datadog.yaml, and applying a bare
+  # Namespace object on top would silently strip that label via the normal
+  # 3-way merge (fields owned by the previous apply but absent from this one
+  # get removed). Only create it if it's genuinely missing.
+  kubectl get namespace datadog >/dev/null 2>&1 || kubectl create namespace datadog
+
+  SECRET_ARGS=(--from-literal "api-key=${DATADOG_API_KEY}")
+  if [ -n "${DATADOG_APP_KEY:-}" ]; then
+    SECRET_ARGS+=(--from-literal "app-key=${DATADOG_APP_KEY}")
+  fi
+  kubectl create secret generic datadog-secret --namespace datadog "${SECRET_ARGS[@]}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  helm repo add datadog https://helm.datadoghq.com >/dev/null 2>&1 || true
+  helm repo update >/dev/null
+
+  HELM_ARGS=(--set "datadog.site=${DATADOG_SITE}")
+  if [ -n "${DATADOG_APP_KEY:-}" ]; then
+    HELM_ARGS+=(--set "datadog.appKeyExistingSecret=datadog-secret")
+  fi
+  helm upgrade --install datadog datadog/datadog \
+    --namespace datadog \
+    -f "$REPO_ROOT/datadog/helm-values.yaml" \
+    "${HELM_ARGS[@]}"
+
+  # A Secret-only change (e.g. switching accounts on a re-run) isn't picked up
+  # by already-running pods and isn't detected as a Helm diff either --
+  # restart explicitly so the agent always ends up on the key/site just set.
+  if kubectl get daemonset datadog -n datadog >/dev/null 2>&1; then
+    kubectl rollout restart daemonset/datadog -n datadog >/dev/null
+    kubectl rollout restart deployment/datadog-cluster-agent -n datadog >/dev/null
+  fi
+
+  echo "    waiting for the agent to come up..."
+  for i in $(seq 1 30); do
+    kubectl get daemonset datadog -n datadog >/dev/null 2>&1 && break
+    sleep 5
+  done
+  kubectl rollout status daemonset/datadog -n datadog --timeout=180s
+  kubectl rollout status deployment/datadog-cluster-agent -n datadog --timeout=180s
+  DATADOG_INSTALLED=true
+
+  DATADOG_DASHBOARDS_IMPORTED=false
+  if [ -n "${DATADOG_APP_KEY:-}" ]; then
+    echo "    importing dashboards and monitors"
+    for f in "$REPO_ROOT"/datadog/dashboards/*.json; do
+      curl -sf -X POST "https://api.${DATADOG_SITE}/api/v1/dashboard" \
+        -H "Content-Type: application/json" \
+        -H "DD-API-KEY: ${DATADOG_API_KEY}" \
+        -H "DD-APPLICATION-KEY: ${DATADOG_APP_KEY}" \
+        -d @"$f" > /dev/null
+    done
+    for f in "$REPO_ROOT"/datadog/monitors/*.json; do
+      curl -sf -X POST "https://api.${DATADOG_SITE}/api/v1/monitor" \
+        -H "Content-Type: application/json" \
+        -H "DD-API-KEY: ${DATADOG_API_KEY}" \
+        -H "DD-APPLICATION-KEY: ${DATADOG_APP_KEY}" \
+        -d @"$f" > /dev/null
+    done
+    DATADOG_DASHBOARDS_IMPORTED=true
+  fi
+fi
+
 echo ""
 echo "================================================================"
 echo " Setup complete."
@@ -227,4 +303,14 @@ echo "  https://food-delivery.${LAB_DOMAIN}"
 echo "  https://student-portal.${LAB_DOMAIN}"
 echo "  https://support-tickets.${LAB_DOMAIN}"
 echo ""
-echo "Next: install the Datadog Agent with your own API key -- see docs/student-guide.md."
+if [ "$DATADOG_INSTALLED" = "true" ]; then
+  if [ "$DATADOG_DASHBOARDS_IMPORTED" = "true" ]; then
+    echo "Datadog Agent installed and reporting, dashboards and monitors imported."
+  else
+    echo "Datadog Agent installed and reporting. Set DATADOG_APP_KEY and re-run to"
+    echo "also import the dashboards and monitors."
+  fi
+else
+  echo "Next: install the Datadog Agent with your own API key:"
+  echo "  DATADOG_API_KEY=<key> [DATADOG_APP_KEY=<key>] [DATADOG_SITE=<site>] ./scripts/setup.sh"
+fi

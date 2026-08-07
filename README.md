@@ -86,34 +86,30 @@ cp terraform/terraform.tfvars.example terraform/terraform.tfvars
 
 # 1. Provision AWS infra, build/push all 10 images to ECR, create per-app
 #    databases on the shared RDS instance, deploy all 5 apps, install the
-#    AWS Load Balancer Controller, and create the Route 53 DNS records.
-#    Takes 15-20 minutes, mostly waiting on EKS/ALB. Prints the five app
-#    URLs at the end -- no /etc/hosts editing needed, they're real DNS
-#    names that work immediately.
-./scripts/setup.sh
+#    AWS Load Balancer Controller, create the Route 53 DNS records, and
+#    (if you pass Datadog credentials) install the Agent and import every
+#    dashboard and monitor. Takes 15-20 minutes, mostly waiting on EKS/ALB.
+#    Prints the five app URLs at the end -- no /etc/hosts editing needed,
+#    they're real DNS names that work immediately.
+#    DATADOG_APP_KEY is optional -- without it you still get the Agent
+#    (metrics/APM/logs), just not the dashboard/monitor import. Omit all
+#    three DATADOG_* vars to skip Datadog entirely and install it later by
+#    re-running this same command with them set.
+DATADOG_API_KEY=<your-datadog-api-key> \
+DATADOG_APP_KEY=<your-datadog-app-key> \
+DATADOG_SITE=datadoghq.com \
+  ./scripts/setup.sh
 
 # 2. Visit the apps (the domain is also saved to .lab-domain at the repo
 #    root, in case you lose the setup.sh output)
 open https://ecommerce.$(cat .lab-domain)
 
-# 3. Install the Datadog Agent with your own API key
-# (the datadog namespace already exists -- setup.sh created it in step 4/8)
-kubectl create secret generic datadog-secret --namespace datadog \
-    --from-literal api-key=<your-datadog-api-key>
-# App key is optional -- only needed for the clusterAgent.metricsProvider
-# stretch goal (Datadog-backed HPA custom metrics). Add it with:
-#   --from-literal app-key=<your-datadog-app-key>
-# and add `appKeyExistingSecret: datadog-secret` under `datadog:` in
-# datadog/helm-values.yaml if you want that.
-helm repo add datadog https://helm.datadoghq.com && helm repo update
-helm install datadog datadog/datadog --namespace datadog -f datadog/helm-values.yaml
-
-# 4. Break things
+# 3. Break things
 ./scripts/chaos/inject-latency.sh ecommerce 3000
 ./scripts/chaos/memory-spike.sh support-tickets 300
 ./scripts/chaos/kill-random-pod.sh banking
 
-# 5. Tear down when done -- this costs real AWS money while running
+# 4. Tear down when done -- this costs real AWS money while running
 ./scripts/teardown.sh
 ```
 
@@ -154,6 +150,13 @@ with exact commands for every step below.
 8. Installs the AWS Load Balancer Controller via Helm (authenticated via
    an IRSA role Terraform already created) and applies `ingress/*.yaml`,
    then polls for the shared ALB's hostname and prints it.
+9. **Optional**, only if `DATADOG_API_KEY` is set: creates `datadog-secret`,
+   installs the Agent + Cluster Agent via Helm, restarts it if credentials
+   changed from a previous run, and (if `DATADOG_APP_KEY` is also set)
+   imports every dashboard and monitor via the Datadog API. Skipped with a
+   clear message otherwise -- everything above it doesn't depend on this
+   step, so it's safe to skip now and install later by re-running with the
+   env vars set.
 
 ### Connecting `kubectl` manually
 
@@ -238,18 +241,19 @@ workflow around these scripts.
 
 ## Observability: Datadog
 
-Each student/user installs the Datadog Agent + Cluster Agent once via Helm
-(`datadog/helm-values.yaml`) into their own free-trial account, with APM
-and log collection enabled -- see
+Each student/user installs the Datadog Agent + Cluster Agent once, into
+their own free-trial account, by passing `DATADOG_API_KEY` (and
+optionally `DATADOG_APP_KEY`, `DATADOG_SITE`) to `scripts/setup.sh` --
+see step 9/9 above -- with APM and log collection enabled. See
 [docs/architecture.md](docs/architecture.md#observability-datadog) for how
-tracing and unified service tagging are wired up. Importable dashboards
-live in `datadog/dashboards/` (one per
-app, plus `sre-lab-overview.json`), and importable monitors live in
-`datadog/monitors/` (`high-error-rate`, `high-latency-p95`, `pod-restarts`,
-`memory-saturation`). See [docs/student-guide.md](docs/student-guide.md)
-sections 5-6 for the exact import steps, and
-[docs/slo-sla-sli.md](docs/slo-sla-sli.md) for what SLI each dashboard is
-actually measuring.
+tracing and unified service tagging are wired up. Dashboards live in
+`datadog/dashboards/` (one per app, plus `sre-lab-overview.json`), and
+monitors live in `datadog/monitors/` (`high-error-rate`,
+`high-latency-p95`, `pod-restarts`, `memory-saturation`) -- both get
+imported automatically if `DATADOG_APP_KEY` is set.
+See [docs/student-guide.md](docs/student-guide.md) section 3 for the
+exact env vars, and [docs/slo-sla-sli.md](docs/slo-sla-sli.md) for what
+SLI each dashboard is actually measuring.
 
 ## Troubleshooting
 
