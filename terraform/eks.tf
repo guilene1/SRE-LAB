@@ -47,12 +47,22 @@ resource "aws_eks_cluster" "main" {
   }
 }
 
+locals {
+  # If Terraform is itself being run as the account root user, the "caller"
+  # resources below already cover the root ARN -- creating a second, separate
+  # access entry/policy association for the same principal_arn races the
+  # caller resources and fails with ResourceInUseException.
+  caller_is_root = data.aws_caller_identity.current.arn == "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+}
+
 resource "aws_eks_access_entry" "root" {
+  count         = local.caller_is_root ? 0 : 1
   cluster_name  = aws_eks_cluster.main.name
   principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
 }
 
 resource "aws_eks_access_policy_association" "root_admin" {
+  count         = local.caller_is_root ? 0 : 1
   cluster_name  = aws_eks_cluster.main.name
   principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"

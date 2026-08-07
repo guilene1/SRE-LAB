@@ -17,12 +17,6 @@ datadog:
     enabled: true
     containerCollectAll: true
 
-  # Required so backends (running as separate containers, not sidecars)
-  # can reach the agent over the pod's host IP to submit traces.
-  env:
-    - name: DD_APM_NON_LOCAL_TRAFFIC
-      value: "true"
-
   # Infra + container metrics
   processAgent:
     enabled: true

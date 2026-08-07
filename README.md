@@ -58,7 +58,18 @@ apps/<app>/
   domain you control, already set up in Route 53 -- this lab looks it up by
   name, it won't create one for you). It creates five DNS records directly
   under it (`ecommerce.<your-domain>`, `banking.<your-domain>`, etc.), so
-  pick a zone where those five names aren't needed for anything else.
+  pick a zone where those five names aren't needed for anything else. The
+  domain's **registrar-level NS delegation must actually point at this
+  hosted zone's nameservers** (Terraform only creates records *inside* the
+  zone, it never touches delegation) -- `setup.sh` checks this for you before
+  provisioning anything and warns if they don't match, but if you have a
+  choice of domains, one already fully managed in Route 53 (nameservers
+  registered there too) is the least error-prone option.
+- No special AWS IAM setup required -- this works identically whether you
+  run it as the AWS account root user or a named IAM identity/role.
+  (`terraform/eks.tf` grants both the caller and the account root cluster-admin
+  access without creating conflicting duplicate entries when they're the same
+  principal.)
 - Your own free [Datadog](https://www.datadoghq.com/) trial account. Nothing
   in this repo contains a real API key; each student/user brings their own.
 
@@ -82,9 +93,14 @@ cp terraform/terraform.tfvars.example terraform/terraform.tfvars
 open http://ecommerce.$(cat .lab-domain)
 
 # 3. Install the Datadog Agent with your own API key
-kubectl create namespace datadog
+# (the datadog namespace already exists -- setup.sh created it in step 4/8)
 kubectl create secret generic datadog-secret --namespace datadog \
-  --from-literal api-key=<your-datadog-api-key>
+    --from-literal api-key=<your-datadog-api-key>
+# App key is optional -- only needed for the clusterAgent.metricsProvider
+# stretch goal (Datadog-backed HPA custom metrics). Add it with:
+#   --from-literal app-key=<your-datadog-app-key>
+# and add `appKeyExistingSecret: datadog-secret` under `datadog:` in
+# datadog/helm-values.yaml if you want that.
 helm repo add datadog https://helm.datadoghq.com && helm repo update
 helm install datadog datadog/datadog --namespace datadog -f datadog/helm-values.yaml
 
@@ -104,6 +120,14 @@ with exact commands for every step below.
 
 `scripts/setup.sh` is a single idempotent-ish script that runs, in order:
 
+0. **Preflight checks** -- verifies every required CLI is installed and
+   Docker is running, that AWS credentials work, that `terraform.tfvars`
+   exists with a real `dns_zone_name`, that a matching hosted zone exists in
+   Route 53, and that the domain's registrar NS delegation actually points
+   at it. Fails fast with a specific fix instead of burning ~20 minutes on a
+   `terraform apply` that would've deployed fine but left you with URLs that
+   never resolve. Also prints which AWS identity you're running as, purely
+   informational -- root user or IAM identity both work with no extra steps.
 1. `terraform init` / `terraform apply` in `terraform/` -- creates the VPC,
    EKS cluster + managed node group, the shared RDS instance, and 10 ECR
    repositories (one per app per frontend/backend).
@@ -252,6 +276,20 @@ app, plus `sre-lab-overview.json`), and importable monitors live in
 sections 5-6 for the exact import steps, and
 [docs/slo-sla-sli.md](docs/slo-sla-sli.md) for what SLI each dashboard is
 actually measuring.
+
+## Troubleshooting
+
+Common issues people hit standing this up for the first time, and what
+actually fixes them:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `setup.sh` aborts during preflight with an NS delegation warning | Your domain's registrar isn't pointed at the Route 53 hosted zone `dns_zone_name` refers to -- Terraform only creates records *inside* the zone, never the delegation itself | Update the domain's NS records at its registrar to match the list the script prints, then re-run. Or pick a different `dns_zone_name` that's already fully managed in Route 53 |
+| `terraform apply` fails on `aws_eks_access_entry` with `ResourceInUseException` | You're running as the AWS account root user, and something (an older checkout, a manual `terraform apply` outside this script) created a duplicate access entry for the same principal | Already handled automatically in current `terraform/eks.tf` (`caller_is_root` skips the redundant entry) -- if you still hit this, you're likely on a stale checkout, pull latest |
+| `helm install`/`upgrade datadog` fails with `duplicate entries for key [name="DD_APM_NON_LOCAL_TRAFFIC"]` | Current Datadog Helm chart versions auto-inject this env var once `datadog.apm` is enabled; an older `datadog/helm-values.yaml` also set it explicitly | Already fixed in current `datadog/helm-values.yaml` (the manual `env:` override was removed) -- pull latest if you still see this |
+| Datadog Helm install prints `ERROR: You did not set a datadog.appKey` | Expected if you only created an API key, not an Application key | Harmless for the core lab -- the app key is only used by the optional `clusterAgent.metricsProvider` (Datadog-backed HPA custom metrics) stretch goal. Everything else (metrics, APM, logs, dashboards, monitors) works without it |
+| App URLs return `NXDOMAIN` right after `setup.sh` finishes | DNS propagation lag, or the registrar delegation issue above slipped past preflight (e.g. it was fixed seconds before you ran the script and hadn't propagated yet) | Wait a few minutes and retry; if it persists, re-check NS delegation manually: `aws route53 list-resource-record-sets --hosted-zone-id <zone-id> --query "ResourceRecordSets[?Type=='NS']"` vs `nslookup -type=NS <your-domain> 8.8.8.8` -- the two lists must match exactly |
+| Need to hit an app before DNS is fixed | -- | Bypass DNS entirely by talking to the ALB directly with a `Host` header: `curl -H "Host: ecommerce.<your-domain>" http://<alb-hostname>/` (get `<alb-hostname>` from `kubectl -n ecommerce get ingress ecommerce`) |
 
 ## Resource limits and why
 
