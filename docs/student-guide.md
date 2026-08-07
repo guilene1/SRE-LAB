@@ -145,7 +145,8 @@ them for the postmortems.
    need it for comparison later.
 3. **Break something.** Pick an incident from `docs/incident-scenarios/`
    (or ask your instructor to trigger one) without reading the answer
-   key.
+   key -- e.g. `01-the-silent-checkout.md` is an ecommerce latency problem
+   tied to `docs/runbooks/high-latency.md`.
 4. **Observe in Datadog.** Find the incident in your dashboards before
    you go looking at `kubectl` -- which widget moved first, and by how
    much?

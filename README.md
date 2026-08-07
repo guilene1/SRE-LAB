@@ -168,44 +168,21 @@ kubectl get pods -A
 
 The infrastructure is just the stage -- the actual exercise is the loop
 below. Work through it once end-to-end, then repeat with a different app
-and a different failure mode.
+and a different failure mode. See
+[docs/student-guide.md](docs/student-guide.md) section 7 for the full
+step-by-step task list with exact commands.
 
-1. **Deploy and poke at the apps.** After `setup.sh` completes, confirm all
-   five load and complete one real user action in each: add to cart and
-   check out in ecommerce, log in and check a balance in banking, place an
-   order in food-delivery, view grades in student-portal, file a ticket in
-   support-tickets.
-2. **Install Datadog and import the dashboards/monitors** (step 3 in
-   [Quick start](#quick-start) above, or in full in
-   [docs/student-guide.md](docs/student-guide.md) sections 5-6): each
-   app's dashboard from `datadog/dashboards/<app>.json`, plus
-   `sre-lab-overview.json`, and the four monitors in `datadog/monitors/`.
-3. **Observe the baseline.** With everything healthy, open each dashboard
-   and note what "normal" looks like -- throughput, p95 latency, error
-   rate. You'll need this for comparison once something breaks.
-4. **Pick an incident.** Either work through
-   [docs/incident-scenarios/](docs/incident-scenarios/) in order (each one
-   names the app, difficulty, and which runbook it ties to -- e.g.
-   `01-the-silent-checkout.md` is an ecommerce latency problem tied to
-   `docs/runbooks/high-latency.md`), or trigger a failure yourself with
-   `scripts/chaos/*.sh` (see the table in
-   [Breaking things on purpose](#breaking-things-on-purpose)) without
-   reading the answer key first.
-5. **Find it in Datadog before you touch `kubectl`.** Which widget moved
-   first, and by how much? This is the habit the lab is built to train --
-   diagnosing from telemetry, not from `kubectl get pods -w` first.
-6. **Diagnose**, using the matching runbook in
-   [docs/runbooks/](docs/runbooks/) if you get stuck, but try the
-   diagnostic commands yourself first.
-7. **Fix it**, then confirm recovery both in the app itself and in the
-   Datadog dashboard (metrics lag the real state by a minute or two).
-8. **Write a postmortem**: what broke, how you found it, how you fixed it,
-   how much error budget it burned (see
-   [docs/error-budget.md](docs/error-budget.md) for the calculation
-   method), and one concrete prevention step.
-9. **Repeat** with another incident scenario, then try writing and
-   triggering your own with the `scripts/chaos/*.sh` building blocks for a
-   classmate to diagnose.
+1. Deploy, confirm all five apps work, and install Datadog (dashboards +
+   monitors from `datadog/dashboards/` and `datadog/monitors/`). Observe
+   the healthy baseline before breaking anything.
+2. Break something -- an [incident scenario](docs/incident-scenarios/) or
+   your own [chaos script](#breaking-things-on-purpose) -- and find it in
+   Datadog *before* reaching for `kubectl`.
+3. Diagnose and fix it, using the matching [runbook](docs/runbooks/) if you
+   get stuck, then confirm recovery in both the app and the dashboard.
+4. Write a postmortem against your
+   [error budget](docs/error-budget.md), then repeat with a different
+   incident.
 
 When you're done for the day, tear down (see [Cost](#cost)) -- nothing in
 this lab needs to stay running between sessions.
@@ -256,24 +233,17 @@ Kubernetes-level failures) in copy-paste commands:
 | `bad-deploy.sh <namespace> <deployment> <container>` | Bad release | Points a container at a nonexistent image tag -- new pods sit in `ImagePullBackOff` while old pods keep serving until you roll back |
 | `reset.sh <app>` | -- | Clears latency/error-rate/db-drop/memory chaos state on an app. Does **not** undo `kill-random-pod`, `scale-to-zero`, or `bad-deploy` -- those revert with plain `kubectl` (each script prints the exact command) |
 
-The recommended workflow (see [docs/student-guide.md](docs/student-guide.md)
-for the full version): pick or get assigned an incident from
-[docs/incident-scenarios/](docs/incident-scenarios/), find it in your
-Datadog dashboard *before* reaching for `kubectl`, use the matching runbook
-in [docs/runbooks/](docs/runbooks/) if you get stuck, fix it, then write a
-postmortem including how much error budget it burned
-([docs/error-budget.md](docs/error-budget.md)).
+See [How to use this lab](#how-to-use-this-lab) for the recommended
+workflow around these scripts.
 
 ## Observability: Datadog
 
 Each student/user installs the Datadog Agent + Cluster Agent once via Helm
 (`datadog/helm-values.yaml`) into their own free-trial account, with APM
-and log collection enabled. Because every backend loads `dd-trace` as the
-very first line executed, a single HTTP request is traceable
-frontend -> backend -> Postgres in APM, and unified service tagging
-(`env`/`service`/`version` as both pod labels and `DD_*` env vars) means a
-trace, a log line, and a container metric for the same pod all correlate
-automatically. Importable dashboards live in `datadog/dashboards/` (one per
+and log collection enabled -- see
+[docs/architecture.md](docs/architecture.md#observability-datadog) for how
+tracing and unified service tagging are wired up. Importable dashboards
+live in `datadog/dashboards/` (one per
 app, plus `sre-lab-overview.json`), and importable monitors live in
 `datadog/monitors/` (`high-error-rate`, `high-latency-p95`, `pod-restarts`,
 `memory-saturation`). See [docs/student-guide.md](docs/student-guide.md)
@@ -299,10 +269,9 @@ actually fixes them:
 
 Each namespace (`namespaces/<app>.yaml`) has its own `ResourceQuota` (e.g.
 ecommerce: 1 CPU / 1Gi requested, 2 CPU / 2Gi limit, max 20 pods) and
-`LimitRange` (per-container default 250m/256Mi, max 1 CPU/1Gi). This is
-deliberate: real headroom would hide failure modes like pods stuck
-`Pending` on quota or `OOMKilled` at a container limit, which are exactly
-the failure modes this lab exists to practice diagnosing.
+`LimitRange` (per-container default 250m/256Mi, max 1 CPU/1Gi). See
+[docs/architecture.md](docs/architecture.md#compute-amazon-eks) for why
+these are deliberately tight rather than generous.
 
 ## Cost
 
@@ -319,19 +288,12 @@ checklist is printed at the end of the teardown script.
 ## What's deliberately simplified
 
 This is a training lab, not a production reference architecture -- several
-things are simplified on purpose to keep it cheap and easy for anyone to
-stand up independently. Full rationale for each is in
-[docs/architecture.md](docs/architecture.md#whats-deliberately-simplified-for-a-training-lab);
-summary:
-
-| Simplification | What production would do instead |
-|---|---|
-| One shared RDS instance for all 5 apps | One instance per app/environment |
-| Plaintext password comparison for banking/student-portal demo login | bcrypt/argon2 hashing, real session management |
-| One shared ALB (`IngressGroup`) across all 5 apps | One ALB per app/environment, plus AWS WAF attached |
-| Chaos endpoints reachable over the public Ingress | Chaos hooks gated behind a separate internal-only port/network policy |
-| Terraform state stored locally | Remote state (S3 + DynamoDB lock table) |
-| No TLS on the Ingress | ACM certificate + HTTPS redirect |
+things (a shared RDS instance, plaintext demo-login passwords, a shared
+ALB, publicly-reachable chaos endpoints, local Terraform state, no TLS) are
+simplified on purpose to keep it cheap and easy for anyone to stand up
+independently. See
+[docs/architecture.md](docs/architecture.md#whats-deliberately-simplified-for-a-training-lab)
+for the full list and the rationale behind each one.
 
 ## Further reading
 
