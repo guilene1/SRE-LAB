@@ -12,72 +12,8 @@ traffic to all five apps by hostname. Datadog's Agent and Cluster Agent run
 cluster-wide and collect infrastructure metrics, container logs, and APM
 traces from every app.
 
-```mermaid
-flowchart TB
-    subgraph Internet
-        Student[Student's browser]
-    end
+<img width="512" height="341" alt="image" src="https://github.com/user-attachments/assets/ffc1ab59-e5de-4046-ac25-a89e3438c0c0" />
 
-    subgraph AWS["AWS Account"]
-        subgraph VPC["VPC (10.0.0.0/16)"]
-            ALB["AWS ALB\n(one shared ALB, created by the AWS Load\nBalancer Controller via 5 Ingress resources\nin one IngressGroup)"]
-
-            subgraph Public["Public subnets"]
-                NAT["NAT Gateway"]
-            end
-
-            subgraph Private["Private subnets"]
-                subgraph EKS["EKS managed node group"]
-                    ALBController["aws-load-balancer-controller\n(kube-system, IRSA-authenticated)"]
-                    DDAgent["Datadog Agent + Cluster Agent\n(DaemonSet)"]
-
-                    subgraph NS1["ns: ecommerce"]
-                        EcomFE["frontend (nginx)"]
-                        EcomBE["backend (Node/Express + dd-trace)"]
-                    end
-                    subgraph NS2["ns: banking"]
-                        BankFE["frontend"]
-                        BankBE["backend"]
-                    end
-                    subgraph NS3["ns: food-delivery"]
-                        FoodFE["frontend"]
-                        FoodBE["backend"]
-                        Redis["Redis (order status cache)"]
-                    end
-                    subgraph NS4["ns: student-portal"]
-                        SPFE["frontend"]
-                        SPBE["backend"]
-                    end
-                    subgraph NS5["ns: support-tickets"]
-                        STFE["frontend"]
-                        STBE["backend"]
-                    end
-                end
-
-                RDS[("Amazon RDS for PostgreSQL\n(one instance, 5 databases)")]
-            end
-        end
-
-        ECR["Amazon ECR\n(10 repositories)"]
-    end
-
-    DDCloud["Datadog\n(student's own account)"]
-
-    Student -->|"https://ecommerce.$(cat .lab-domain) etc."| ALB
-    ALB -->|"target-type: ip, direct to pod"| EcomFE & BankFE & FoodFE & SPFE & STFE
-    ALBController -.->|"manages listeners/rules/targets"| ALB
-    EcomFE --> EcomBE
-    BankFE --> BankBE
-    FoodFE --> FoodBE
-    SPFE --> SPBE
-    STFE --> STBE
-    FoodBE --> Redis
-
-    EcomBE & BankBE & FoodBE & SPBE & STBE -->|"port 5432, node SG only"| RDS
-    EKS -.->|"pulls images"| ECR
-    DDAgent -->|"traces, logs, metrics"| DDCloud
-    EcomBE & BankBE & FoodBE & SPBE & STBE -.->|"dd-trace"| DDAgent
-```
 
 ## Compute: Amazon EKS
 
